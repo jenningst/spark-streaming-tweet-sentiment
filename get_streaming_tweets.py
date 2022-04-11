@@ -3,23 +3,45 @@ import json
 import os
 import requests
 import sys
+from typing import Dict, List
 
-# To set your enviornment variables in your terminal run the following line:
-# export 'BEARER_TOKEN'='<your_bearer_token>'
 bearer_token = os.environ.get("BEARER_TOKEN")
 
 
-def bearer_oauth(r):
-    """
-    Method required by bearer token authentication.
-    """
+def bearer_oauth(r) -> Dict:
+    '''
+    Obtain the bearer token from a request to the Twitter API.
+
+    Parameters
+    ----------
+    r : dictionary
+        A default request header for authorizing API requests.
+
+    Returns
+    -------
+    r 
+        The request headers containing the bearer-token.
+    '''
 
     r.headers["Authorization"] = f"Bearer {bearer_token}"
     r.headers["User-Agent"] = "v2FilteredStreamPython"
     return r
 
 
-def get_rules():
+def get_rules() -> Dict:
+    '''
+    Gets the current rule-set for the streaming API endpoint.
+
+    Returns
+    -------
+    response : dict
+        The list of current rules for the given user.
+
+    Raises
+    ------
+    Exception
+        If the GET to the /rules endpoint fails, raise an exception.
+    '''
     response = requests.get(
         "https://api.twitter.com/2/tweets/search/stream/rules", auth=bearer_oauth
     )
@@ -27,11 +49,27 @@ def get_rules():
         raise Exception(
             "Cannot get rules (HTTP {}): {}".format(response.status_code, response.text)
         )
-    # print(json.dumps(response.json()))
     return response.json()
 
 
-def delete_all_rules(rules):
+def delete_all_rules(rules: Dict) -> None:
+    '''
+    Deletes all rules for the given user.
+
+    Parameters
+    ----------
+    rules : dict
+        A dictionary containing the rules to remove from the current rules object.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    Exception
+        If the POST to the /rules endpoint fails, raise an exception.
+    '''
     if rules is None or "data" not in rules:
         return None
 
@@ -48,13 +86,28 @@ def delete_all_rules(rules):
                 response.status_code, response.text
             )
         )
-    # print(json.dumps(response.json()))
     print(f'Successfully removed existing rules')
 
 
-def get_trending_topics(woeid):
-    '''Retrieve the top 50 trending topics for a given location based on its WOEID and
-       return each trending term in a list of JSON items in the format { value: term }.
+def get_trending_topics(woeid: int) -> List[Dict]:
+    '''
+    Retrieve the top 50 trending topics for a given location based on its WOEID and
+    return each trending term in a list of JSON items in the format { value: term }.
+
+    Parameters
+    ----------
+    woeid : int
+        An integer representing the country ID to filter tweets on.
+
+    Returns
+    -------
+    topic_set: list
+        A list of trending topics from the streaming endpoint.
+
+    Raises
+    ------
+    Exception
+        If the GET to the trending topics endpoint fails, raise an exception.
     '''
     trend_params = { 'id': woeid }
     response = requests.get(
@@ -69,13 +122,26 @@ def get_trending_topics(woeid):
                 response.status_code, response.text
             )
         )
-    json_response = json.loads(response.content)
-
     # create the rules in a format Twitter understands
-    return [ { 'value': str(item['name']) + ' lang:en' } for item in json_response[0]['trends'] ]
+    json_response = json.loads(response.content)
+    topic_set = [ { 'value': str(item['name']) + ' lang:en' } for item in json_response[0]['trends'] ]
+    return topic_set
 
 
-def set_rules(rules, delete=None):
+def set_rules(rules: Dict) -> None:
+    '''
+    Sets/overwrites the current rules for the streaming endpoint request.
+
+    Parameters
+    ----------
+    rules : Dict
+        A dictionary of rules for overwriting/updating the current requests rule-set.
+
+    Raises
+    ------
+    Exception
+        If the POST to the /rules endpoint fails, raise an exception.
+    '''
     # add the rules JSON body in a list to the request
     payload = { "add": rules }
     response = requests.post(
@@ -87,12 +153,23 @@ def set_rules(rules, delete=None):
         raise Exception(
             "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
         )
-    # print(json.dumps(response.json()))
     print(f'Successfully set new rules')
 
 
-def get_stream(rule_set, max_tweets=10):
-    ''''''
+def get_stream(max_tweets: int):
+    '''
+    Streaming tweets with a ruleset and save the tweets to CSV.
+
+    Parameters
+    ----------
+    max_tweets : int
+        The maximum number of tweets to return from the Twitter API.
+
+    Raises
+    ------
+    Exception
+        If the GET to the /streaming endpoint fails, raise an exception.
+    '''
     
     payload = {
         'tweet.fields': 'created_at',
@@ -104,9 +181,6 @@ def get_stream(rule_set, max_tweets=10):
         params=payload,
         stream=True,
     )
-
-    # print(f'Formatted response: [ {response.url} ]')
-    # print(f'Status code: [ {response.status_code} ]')
 
     if response.status_code != 200:
         raise Exception(
@@ -133,7 +207,6 @@ def get_stream(rule_set, max_tweets=10):
                     tweet_response['data']['text'].rstrip(),
                     
                 ])
-                # print(json.dumps(tweet_response, indent=4, sort_keys=True))
             if rows % 5000 == 0:
                 print(f'\t{rows} tweets collected')
             if rows > max_tweets:
@@ -143,13 +216,13 @@ def get_stream(rule_set, max_tweets=10):
 def main():
     # initialize the filtered stream request with rules set from the top 25 trending topics
     # and stream the data into a csv file
+    
     current_rules = get_rules()
     delete_all_rules(current_rules)
     rules = get_trending_topics(woeid=1)
-    rules = rules[:24] 
-    print(json.dumps(rules, indent=4))
-    # new_rules = set_rules(rules)
-    # get_stream(new_rules, 50000)
+    rules = rules[:24]  # filter to the top 25 based on account restrictions for the Twttier API
+    new_rules = set_rules(rules)
+    get_stream(new_rules, 50000)
 
 if __name__ == "__main__":
     main()
